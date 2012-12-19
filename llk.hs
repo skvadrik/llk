@@ -2,107 +2,126 @@
 
 
 import qualified Data.Set as S
-import Debug.Trace
+import qualified Data.Map as M
+import           Data.Char    (isSpace, isAlphaNum)
+import           Debug.Trace
 
 
 trace' :: Show a => a -> a
 trace' a = trace (show a) a
 
 
-{-
-E = TR
-T = lambda | +TR | -TR
-R = a | i | (E)
--}
+data Grammar     = G (S.Set Terminal) (S.Set NonTerminal) (M.Map NonTerminal (S.Set Rule)) NonTerminal deriving (Show)
+data Terminal    = T String deriving (Show, Ord, Eq)
+data NonTerminal = N String deriving (Show, Ord, Eq)
+data Symbol      = ST Terminal | SN NonTerminal deriving (Show, Ord, Eq)
+data Rule        = R [Symbol] deriving (Show, Ord, Eq)
 
 
-data Terminal    = Ta | Ti | TOParens | TCParens | TPlus | TMinus deriving (Show, Ord, Eq)
-data NonTerminal = NE | NT | NR deriving (Show)
-data Symbol      = T Terminal | N NonTerminal deriving (Show)
-type Rule        = NonTerminal -> [[Symbol]]
+check_name :: String -> String
+check_name s = if filter (\ c -> isAlphaNum c || c == '_') s == s
+    then s
+    else error "bad name"
 
 
-rules :: Rule
-rules NE = [[N NT, N NR]]
-rules NT = [[], [T TPlus, N NT, N NR], [T TMinus, N NT, N NR]]
-rules NR = [[T Ta], [T Ti], [T TOParens, N NE, T TCParens]]
+split_at :: Char -> String -> [String]
+split_at _ "" = []
+split_at c  s =
+    let (s1, s2) = break (== c) s
+    in  case s2 of
+            ""              -> [s1]
+            x : s3 | x == c -> s1 : split_at c s3
+            _               -> error "error while spliting"
 
 
-is_terminal :: Symbol -> Bool
-is_terminal x = case x of
-    N nt -> False
-    T  t -> True
+parse_grammar :: String -> Grammar
+parse_grammar s =
+    let ss = (filter (\ l -> notElem l ["", "\n"]) . split_at ';') s
+    in  case ss of
+            [v, w, r, a] ->
+                let terminals        = trace' $ parse_terminals    v
+                    nonterminals     = trace' $ parse_nonterminals w
+                    rules            = trace' $ parse_rules        terminals nonterminals r
+                    axiom            = trace' $ parse_axiom        nonterminals a
+                in  G terminals nonterminals rules axiom
+            _               -> error "bad grammar file"
 
 
-from_n :: Symbol -> NonTerminal
-from_n x = case x of
-    N nt -> nt
-    T _  -> error "trying to convert terminal symbol to non-terminal"
+parse_terminals :: String -> S.Set Terminal
+parse_terminals =
+    ( S.fromList
+    . map T
+    . split_at ','
+    . init
+    . tail
+    . filter (not . isSpace)
+    )
 
 
-from_t :: Symbol -> Terminal
-from_t x = case x of
-    T t -> t
-    N _ -> error "trying to convert non-terminal symbol to terminal"
+parse_nonterminals :: String -> S.Set NonTerminal
+parse_nonterminals =
+    ( S.fromList
+    . map (N . check_name)
+    . split_at ','
+    . init
+    . tail
+    . filter (not . isSpace)
+    )
 
 
-{-
--- this won't work
-produce_ :: [Symbol] -> S.Set [Terminal]
-produce_ xs =
-    let (xs1, xs2) = trace' $ span is_terminal xs
-    in  case xs2 of
-            []      -> (S.singleton . map from_t) xs
-            x : xs3 ->
-                let nt  = from_n x
-                    yss = rules nt
-                    zss = map (\ ys -> xs1 ++ ys ++ xs3) yss
-                in  S.unions $ map produce_ zss
+parse_rules :: S.Set Terminal -> S.Set NonTerminal -> String -> M.Map NonTerminal (S.Set Rule)
+parse_rules ts ns =
+    ( M.fromList
+    . map (parse_rule ts ns)
+    . split_at ','
+    . takeWhile (/= '}')
+    . tail
+    . dropWhile (/= '{')
+    )
 
 
-produce :: NonTerminal -> S.Set [Terminal]
-produce nt = produce_ [N nt]
--}
+parse_rule :: S.Set Terminal -> S.Set NonTerminal -> String -> (NonTerminal, S.Set Rule)
+parse_rule ts ns s =
+    let (s1, s2) = break (== '=') s
+        nt = case words s1 of
+            [w] -> if S.member (N w) ns
+                then N w
+                else error "bad nonterminal in rule"
+            _   -> error "bad rule lhs"
+        rs =
+            ( S.fromList
+            . map
+                ( R
+                . map
+                    ( (\ w -> if S.member (T w) ts
+                        then (ST . T) w
+                        else if S.member (N w) ns
+                            then (SN . N . check_name) w
+                            else error "bad symbol"
+                      )
+                    . trace'
+                    )
+                . words
+                )
+            . split_at '|'
+            . tail
+            ) s2
+    in  (nt, rs)
 
 
-first_k_ :: Int -> [Symbol] -> S.Set [Terminal]
-first_k_ k xs =
-    let (xs1, xs2) = span is_terminal xs
-    in  if length xs1 >= k || null xs2
-            then (S.singleton . map from_t . take k) xs1
-            else
-                let x : xs3 = xs2
-                    nt  = from_n x
-                    yss = rules nt
-                    zss = map (\ ys -> xs1 ++ ys ++ xs3) yss
-                in  S.unions $ map (first_k_ k) zss
-
-
-first_k :: Int -> NonTerminal -> S.Set [Terminal]
-first_k k nt = first_k_ k [N nt]
-
-
-produce1 :: NonTerminal -> [[Terminal]]
-produce1 nt = produce1_ [N nt]
-
-
-produce1_ :: [Symbol] -> [[Terminal]]
-produce1_ xs =
-    let (xs1, xs2) = trace' $ span is_terminal xs
-    in  case xs2 of
-            []      -> [map from_t xs]
-            x : xs3 ->
-                let nt  = from_n x
-                    yss = rules nt
-                    zss = map (\ ys -> xs1 ++ ys ++ xs3) yss
-                in  concatMap produce1_ zss
+parse_axiom :: S.Set NonTerminal -> String -> NonTerminal
+parse_axiom ns =
+    ( (\ w -> if S.member w ns then w else error "bad nonterminal")
+    . N
+    . check_name
+    . filter (not . isSpace)
+    )
 
 
 main :: IO ()
 main = do
-    let words = first_k 3 NE
-        words1 = take 10 $ produce1 NE
-    print words
-
+    f <- readFile "1.g"
+    let g = parse_grammar f
+    print g
 
 
