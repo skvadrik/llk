@@ -59,14 +59,26 @@ follow_k k n =
 
 right_contexts :: NonTerminal -> [[Symbol]]
 right_contexts n =
-    let rs1 = S.foldl' (\ rs n -> rs ++ rules n) [] nonterminals
-        f r =
-            let r1 = dropWhile is_terminal r
-            in  case r1 of
-                    N n1 : r2 | n1 == n -> [r2]
-                    _                   -> []
-        rs2 = foldl' (\ rs r -> f r ++ rs) [] rs1
-    in  rs2
+    let rs = S.foldl' (\ rs n -> rs ++ rules n) [] nonterminals
+        f r = case dropWhile is_terminal r of
+            N n1 : r1 | n1 == n -> [r1]
+            _                   -> []
+    in  foldl' (\ rs1 r -> f r ++ rs1) [] rs
+
+
+is_sll_ :: Int -> NonTerminal -> Bool
+is_sll_ k n =
+    let rs = rules n
+        f r1 r2 =
+            let rcontexts = right_contexts n
+                xs = S.unions $ map (\ ctx -> first_k_ k (r1 ++ ctx)) rcontexts
+                ys = S.unions $ map (\ ctx -> first_k_ k (r2 ++ ctx)) rcontexts
+            in  S.intersection xs ys == S.empty
+    in  foldl' (\ b1 r1 -> foldl' (\ b2 r2 -> b2 && f r1 r2) b1 (delete r1 rs)) True rs
+
+
+is_sll :: Int -> Bool
+is_sll k = S.foldl' (\ b n -> b && is_sll_ k n) True nonterminals
 
 
 is_ll_ :: Int -> NonTerminal -> Bool
@@ -98,6 +110,7 @@ main :: IO ()
 main = do
     let k = find_k
     print $ "This grammar is LL-" ++ show k
+    print $ is_sll k
 
 
 
