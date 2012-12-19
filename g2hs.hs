@@ -1,6 +1,5 @@
 #!/usr/bin/env runghc
 
-
 import           Control.Applicative       ((<$>))
 import           Control.DeepSeq
 import qualified Data.Set            as S
@@ -181,16 +180,26 @@ doc_rules rs =
     in  d1 $$ d2
 
 
+doc_axiom :: NonTerminal -> Doc
+doc_axiom n = PP.text "axiom :: NonTerminal" $$ PP.text "axiom = " <> nonterminal2name n
+
+
+($$$) :: Doc -> Doc -> Doc
+d1 $$$ d2 = d1 $$ PP.text "" $$ d2
+
+
 g2hs :: Grammar -> String
 g2hs (G ts ns rs a) =
     let doc_ts = (PP.hcat . PP.punctuate (PP.text " | ") . map terminal2name . S.toList) ts
         doc_ns = (PP.hcat . PP.punctuate (PP.text " | ") . map nonterminal2name . S.toList) ns
-        d1 = PP.text "data Terminal    = " <> doc_ts <> PP.text " deriving (Show)"
-        d2 = PP.text "data NonTerminal = " <> doc_ns <> PP.text " deriving (Show)"
-        d3 = PP.text "data Symbol      = T Terminal | N NonTerminal deriving (Show)"
+        d0 = PP.text "module Grammar where"
+        d1 = PP.text "data Terminal    = " <> doc_ts <> PP.text " deriving (Show, Eq, Ord)"
+        d2 = PP.text "data NonTerminal = " <> doc_ns <> PP.text " deriving (Show, Eq, Ord)"
+        d3 = PP.text "data Symbol      = T Terminal | N NonTerminal deriving (Show, Eq, Ord)"
         d4 = PP.text "type Rule        = NonTerminal -> [[Symbol]]"
         d5 = doc_rules rs
-        doc = d1 $$ d2 $$ d3 $$ d4 $$ d5
+        d6 = doc_axiom a
+        doc = d0 $$$ d1 $$ d2 $$ d3 $$ d4 $$$ d5 $$$ d6
     in  PP.render doc
 
 
@@ -201,5 +210,4 @@ main = do
         _        -> error "usage: ./g2hs <grammar-file> <hs-file>"
     code <- g2hs . parse_grammar <$> readFile fg
     writeFile fhs code
-    print code
 
