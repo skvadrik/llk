@@ -1,7 +1,5 @@
-#!/usr/bin/env runghc
-
-
-import qualified Data.Set as S
+import qualified Data.Set     as S
+import           Data.List         (foldl', delete)
 import           Debug.Trace
 
 import Grammar
@@ -13,8 +11,8 @@ trace' a = trace (show a) a
 
 is_terminal :: Symbol -> Bool
 is_terminal x = case x of
-    N nt -> False
-    T  t -> True
+    N _ -> False
+    T _ -> True
 
 
 from_n :: Symbol -> NonTerminal
@@ -41,15 +39,65 @@ first_k_ k xs =
                     zss = map (\ ys -> xs1 ++ ys ++ xs3) yss
                 in  S.unions $ map (first_k_ k) zss
 
-
+{-
 first_k :: Int -> NonTerminal -> S.Set [Terminal]
-first_k k nt = first_k_ k [N nt]
+first_k k n = first_k_ k [N n]
+
+
+follow_k :: Int -> NonTerminal -> S.Set [Terminal]
+follow_k k n =
+    let rs1 = S.foldl' (\ rs n -> rs ++ rules n) [] nonterminals
+        f r =
+            let r1 = dropWhile is_terminal r
+            in  case r1 of
+                    N n1 : _ | n1 == n -> [r1]
+                    _                  -> []
+        rs2 = foldl' (\ rs r -> f r ++ rs) [] rs1
+        rs3 = S.unions $ map (first_k_ k) rs2
+    in  rs3
+-}
+
+right_contexts :: NonTerminal -> [[Symbol]]
+right_contexts n =
+    let rs1 = S.foldl' (\ rs n -> rs ++ rules n) [] nonterminals
+        f r =
+            let r1 = dropWhile is_terminal r
+            in  case r1 of
+                    N n1 : r2 | n1 == n -> [r2]
+                    _                   -> []
+        rs2 = foldl' (\ rs r -> f r ++ rs) [] rs1
+    in  rs2
+
+
+is_ll_ :: Int -> NonTerminal -> Bool
+is_ll_ k n =
+    let rs = rules n
+        g r1 r2 ch =
+            let xs = first_k_ k (r1 ++ ch)
+                ys = first_k_ k (r2 ++ ch)
+            in  S.intersection xs ys == S.empty
+        f r1 r2 =
+            let rcontexts = right_contexts n
+            in  foldl' (\ b ctx -> b && g r1 r2 ctx) True rcontexts
+    in  foldl' (\ b1 r1 -> foldl' (\ b2 r2 -> b2 && f r1 r2) b1 (delete r1 rs)) True rs
+
+
+is_ll :: Int -> Bool
+is_ll k = S.foldl' (\ b n -> b && is_ll_ k n) True nonterminals
+
+
+find_k :: Int
+find_k =
+    let try k
+            | is_ll k    = k
+            | otherwise  = try (k + 1)
+    in  try 1
 
 
 main :: IO ()
 main = do
-    let words = first_k 3 axiom
-    print words
+    let k = find_k
+    print $ "This grammar is LL-" ++ show k
 
 
 

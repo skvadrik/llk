@@ -167,8 +167,9 @@ doc_rules rs =
                     . PP.punctuate (PP.text ", ")
                     . map
                         (\ c -> case c of
-                            SN n -> PP.text "N " <> nonterminal2name n
-                            ST t -> PP.text "T " <> terminal2name t
+                            SN n            -> PP.text "N " <> nonterminal2name n
+                            ST (T "lambda") -> PP.empty
+                            ST t            -> PP.text "T " <> terminal2name t
                         )
                     ) cs
                 )
@@ -184,6 +185,18 @@ doc_axiom :: NonTerminal -> Doc
 doc_axiom n = PP.text "axiom :: NonTerminal" $$ PP.text "axiom = " <> nonterminal2name n
 
 
+doc_terminals :: S.Set Terminal -> Doc
+doc_terminals ts =
+    PP.text "terminals :: S.Set Terminal"
+    $$ PP.text "terminals = S.fromList " <> (PP.brackets . PP.hcat . PP.punctuate (PP.text ", ") . map terminal2name . S.toList) ts
+
+
+doc_nonterminals :: S.Set NonTerminal -> Doc
+doc_nonterminals ns =
+    PP.text "nonterminals :: S.Set NonTerminal"
+    $$ PP.text "nonterminals = S.fromList " <> (PP.brackets . PP.hcat . PP.punctuate (PP.text ", ") . map nonterminal2name . S.toList) ns
+
+
 ($$$) :: Doc -> Doc -> Doc
 d1 $$$ d2 = d1 $$ PP.text "" $$ d2
 
@@ -193,13 +206,16 @@ g2hs (G ts ns rs a) =
     let doc_ts = (PP.hcat . PP.punctuate (PP.text " | ") . map terminal2name . S.toList) ts
         doc_ns = (PP.hcat . PP.punctuate (PP.text " | ") . map nonterminal2name . S.toList) ns
         d0 = PP.text "module Grammar where"
+            $$$ PP.text "import qualified Data.Set as S"
         d1 = PP.text "data Terminal    = " <> doc_ts <> PP.text " deriving (Show, Eq, Ord)"
         d2 = PP.text "data NonTerminal = " <> doc_ns <> PP.text " deriving (Show, Eq, Ord)"
         d3 = PP.text "data Symbol      = T Terminal | N NonTerminal deriving (Show, Eq, Ord)"
         d4 = PP.text "type Rule        = NonTerminal -> [[Symbol]]"
-        d5 = doc_rules rs
-        d6 = doc_axiom a
-        doc = d0 $$$ d1 $$ d2 $$ d3 $$ d4 $$$ d5 $$$ d6
+        d5 = doc_terminals ts
+        d6 = doc_nonterminals ns
+        d7 = doc_rules rs
+        d8 = doc_axiom a
+        doc = d0 $$$ d1 $$ d2 $$ d3 $$ d4 $$$ d5 $$$ d6 $$$ d7 $$$ d8
     in  PP.render doc
 
 
