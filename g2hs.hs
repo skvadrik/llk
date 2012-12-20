@@ -197,6 +197,29 @@ doc_nonterminals ns =
     $$ PP.text "nonterminals = S.fromList " <> (PP.brackets . PP.hcat . PP.punctuate (PP.text ", ") . map nonterminal2name . S.toList) ns
 
 
+doc_instances :: S.Set Terminal -> S.Set NonTerminal -> Doc
+doc_instances ts ns =
+    let doc_ts =
+            ( PP.vcat
+            . map (\ (t, k) -> PP.text "hash " <> terminal2name t <> PP.text " = " <> PP.int k)
+            . (\ ts -> zip ts [1 .. length ts])
+            . S.toList
+            ) ts
+        doc_ns =
+            ( PP.vcat
+            . map (\ (n, k) -> PP.text "hash " <> nonterminal2name n <> PP.text " = " <> PP.int k)
+            . (\ ns -> zip ns [1 .. length ns])
+            . S.toList
+            ) ns
+        doc_ss =
+            PP.text "hash (T t) = 2 * hash t"
+            $$ PP.text "hash (N n) = 2 * hash n + 1"
+        d1 = PP.text "instance Hashable Terminal where"    $$ PP.nest 4 doc_ts
+        d2 = PP.text "instance Hashable NonTerminal where" $$ PP.nest 4 doc_ns
+        d3 = PP.text "instance Hashable Symbol where"      $$ PP.nest 4 doc_ss
+    in  d1 $$$ d2 $$$ d3
+
+
 ($$$) :: Doc -> Doc -> Doc
 d1 $$$ d2 = d1 $$ PP.text "" $$ d2
 
@@ -206,7 +229,8 @@ g2hs (G ts ns rs a) =
     let doc_ts = (PP.hcat . PP.punctuate (PP.text " | ") . map terminal2name . S.toList) ts
         doc_ns = (PP.hcat . PP.punctuate (PP.text " | ") . map nonterminal2name . S.toList) ns
         d0 = PP.text "module Grammar where"
-            $$$ PP.text "import qualified Data.Set as S"
+            $$$ PP.text "import qualified Data.Set      as S"
+            $$ PP.text "import           Data.Hashable"
         d1 = PP.text "data Terminal    = " <> doc_ts <> PP.text " deriving (Show, Eq, Ord)"
         d2 = PP.text "data NonTerminal = " <> doc_ns <> PP.text " deriving (Show, Eq, Ord)"
         d3 = PP.text "data Symbol      = T Terminal | N NonTerminal deriving (Show, Eq, Ord)"
@@ -215,7 +239,8 @@ g2hs (G ts ns rs a) =
         d6 = doc_nonterminals ns
         d7 = doc_rules rs
         d8 = doc_axiom a
-        doc = d0 $$$ d1 $$ d2 $$ d3 $$ d4 $$$ d5 $$$ d6 $$$ d7 $$$ d8
+        d9 = doc_instances ts ns
+        doc = d0 $$$ d1 $$ d2 $$ d3 $$ d4 $$$ d5 $$$ d6 $$$ d7 $$$ d8 $$$ d9
     in  PP.render doc
 
 
