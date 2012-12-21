@@ -221,7 +221,10 @@ doc_instances ts ns =
 
 
 ($$$) :: Doc -> Doc -> Doc
-d1 $$$ d2 = d1 $$ PP.text "" $$ d2
+($$$) d1 d2 | PP.isEmpty d1 = d2
+($$$) d1 d2 | PP.isEmpty d2 = d1
+($$$) d1 d2                 = d1 $$ PP.text "" $$ d2
+infixl 5 $$$
 
 
 g2hs :: Grammar -> String
