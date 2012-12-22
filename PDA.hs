@@ -1,7 +1,8 @@
 module PDA
-    ( PDA
+    ( PDA(..)
     , Context
     , llk_table
+    , restrict_to_sll1
     ) where
 
 
@@ -9,6 +10,7 @@ import qualified Data.Set            as S
 import qualified Data.HashMap.Strict as M
 import           Data.Hashable
 import           Data.List                (foldl')
+import           Data.Tuple               (swap)
 import           Debug.Trace
 
 import           Grammar
@@ -81,6 +83,27 @@ resolve_state (A k symb2ctx cmds open) st@(_, ctx) symbs =
         cmds' = M.insertWith M.union st (S.foldl' (\ m c -> M.insert c cmd m) M.empty ctx') cmds
         open' = S.delete st $ foldl' update_open open cmd
     in  A k symb2ctx cmds' open'
+
+
+restrict_to_sll1 :: M.HashMap (NonTerminal, Context) (M.HashMap [Terminal] [(Symbol, Context)])
+    -> (M.HashMap (NonTerminal, Terminal) Int, M.HashMap Int [Symbol])
+restrict_to_sll1 commands =
+    let f (tbl, cmd2id, max) (n, _) cmds = M.foldlWithKey' (g n) (tbl, cmd2id, max) cmds
+        g n (tbl, cmd2id, max) [t] rs =
+            let ns = (fst . unzip) rs
+            in  case M.lookup ns cmd2id of
+                    Just k  ->
+                        let tbl' = M.insert (n, t) k tbl
+                        in  (tbl', cmd2id, max)
+                    Nothing ->
+                        let tbl'    = M.insert (n, t) max tbl
+                            cmd2id' = M.insert ns max cmd2id
+                            max'    = max + 1
+                        in  (tbl', cmd2id', max')
+        g _ _ _ _ = error "it is not an sll(1) parsing table"
+        (sll1_tbl, cmd2id, _) = M.foldlWithKey' f (M.empty, M.empty, 0) commands
+        id2cmd = (M.fromList . map swap . M.toList) cmd2id
+    in  (sll1_tbl, id2cmd)
 
 
 
