@@ -10,25 +10,27 @@ import qualified Text.PrettyPrint    as PP
 import           Text.PrettyPrint          (Doc, ($$), (<>), ($+$))
 
 import Grammar
+import Types
 import PDA
 
 
-pda2cpp :: Int -> Bool -> PDA -> String
-pda2cpp order is_sll pda =
+pda2cpp :: Int -> Bool -> PDA -> Verbosity -> String
+pda2cpp order is_sll pda v =
     case order of
-        1 -> doc_sll1 pda
+        1 -> doc_sll1 pda v
         k -> if is_sll
             then doc_sll k pda
             else doc_ll  k pda
 
 
-doc_sll1 :: PDA -> String
-doc_sll1 pda =
+doc_sll1 :: PDA -> Verbosity -> String
+doc_sll1 pda v =
     let d0 = doc_includes
         d1 = doc_defines
         d2 = doc_symbols
-        d3 = doc_parser pda
-    in  PP.render $ d0 $$$ d1 $$$ d2 $$$ d3
+        d3 = verbose v $ doc_print_stack $$$ doc_print_buffer
+        d4 = doc_parse pda v
+    in  PP.render $ d0 $$$ d1 $$$ d2 $$$ d3 $$$ d4
 
 
 doc_sll :: Int -> PDA -> String
@@ -48,6 +50,7 @@ doc_includes =
 doc_defines :: Doc
 doc_defines =
     PP.text "#define STACK_SIZE 1024"
+    $$ PP.text "#define VERBOSE false"
 
 
 doc_symbols :: Doc
@@ -58,14 +61,34 @@ doc_symbols =
     in  PP.text "enum Symbol" $$ wrap_in_braces symbols <> PP.semi
 
 
-doc_parser :: PDA -> Doc
-doc_parser pda =
+doc_print_stack :: Doc
+doc_print_stack =
+    let d0 = PP.text "void print_stack (const Symbol * bottom, Symbol * top)"
+        d1 =
+            PP.text "Symbol * p = top;"
+            $$ PP.text "printf (\"stack:\\n\");"
+            $$ doc_while (PP.text "p - bottom >= 0") (PP.text "printf (\"\\t%d\\n\", *p--);")
+    in d0 $$ wrap_in_braces d1
+
+
+doc_print_buffer :: Doc
+doc_print_buffer =
+    let d0 = PP.text "void print_buffer (Symbol * begin, Symbol * end)"
+        d1 =
+            PP.text "Symbol * p = begin;"
+            $$ PP.text "printf (\"buffer:\\n\");"
+            $$ doc_while (PP.text "end - p >= 0") (PP.text "printf (\"\\t%d\\n\", *p++);")
+    in d0 $$ wrap_in_braces d1
+
+
+doc_parse :: PDA -> Verbosity -> Doc
+doc_parse pda v =
     let (sll1_tbl, id2cmd) = restrict_to_sll1 (commands pda)
         d0 = doc_signature
         d1 = doc_init_table sll1_tbl
         d2 = doc_init_stack
-        d3 = doc_loop id2cmd
-        d4 = doc_return
+        d3 = doc_loop id2cmd v
+        d4 = doc_return v
         d5 = wrap_in_braces $ d1 $$$ d2 $$$ d3 $$ d4
     in  d0 $$ d5
 
@@ -106,14 +129,20 @@ doc_init_stack =
     in  d1 $$ d2 $$$ d3
 
 
-doc_loop :: M.HashMap Int [Symbol] -> Doc
-doc_loop id2cmd =
-    let d0     = PP.text "while (p != q)" -- "while (stack != stack_bottom && p != q)"
-        d_if   = PP.text "*stack == *p"
-        d_then = PP.text "p++;" $$ PP.text "--stack;"
-        d_else = doc_switch (PP.text "table [*stack][*p]") (doc_cases id2cmd $$ doc_default (PP.text "return false;"))
-        d1     = doc_ifthenelse d_if d_then d_else
-    in  d0 $$ wrap_in_braces d1
+doc_loop :: M.HashMap Int [Symbol] -> Verbosity -> Doc
+doc_loop id2cmd v =
+    let d0         = PP.text "p != q" -- "stack != stack_bottom && p != q"
+        dd0        = doc_verbose v $ PP.text "print_stack (stack_bottom, stack);" $$ PP.text "print_buffer (p, q);"
+        d_if       = PP.text "*stack == *p"
+        d_then     = PP.text "p++;" $$ PP.text "--stack;"
+        dd_then    = doc_verbose v $ PP.text "printf (\"shift\\n\");"
+        d_cases    = doc_cases id2cmd
+        d_default  = doc_default (PP.text "return false;")
+        dd_default = doc_verbose v $ PP.text "printf (\"FAIL\\n\");"
+        d_else     = doc_switch (PP.text "table [*stack][*p]") (d_cases $$ dd_default $$ d_default)
+        dd_else    = doc_verbose v $ PP.text "printf (\"rule %d\\n\", table [*stack][*p]);"
+        d1         = doc_ifthenelse d_if (dd_then $$ d_then) (dd_else $$ d_else)
+    in  doc_while d0 (dd0 $$ d1)
 
 
 doc_cases :: M.HashMap Int [Symbol] -> Doc
@@ -130,8 +159,10 @@ doc_cases id2cmd =
     in  M.foldlWithKey' f PP.empty id2cmd
 
 
-doc_return :: Doc
-doc_return = PP.text "return true;"
+doc_return :: Verbosity -> Doc
+doc_return v =
+    doc_verbose v (PP.text "printf (\"SUCCESS\\n\");")
+    $$ PP.text "return true;"
 
 
 ----------------------------------------------------------------------
@@ -144,11 +175,27 @@ doc_return = PP.text "return true;"
 infixl 5 $$$
 
 
+verbose :: Verbosity -> Doc -> Doc
+verbose v d = case v of
+    V0 -> PP.empty
+    V1 -> d
+
+
+doc_verbose :: Verbosity -> Doc -> Doc
+doc_verbose v d = verbose v $ doc_ifthen (PP.text "VERBOSE") d
+
+
 wrap_in_braces :: Doc -> Doc
 wrap_in_braces d =
     PP.text "{"
     $+$ PP.nest 4 d
     $$ PP.text "}"
+
+
+doc_ifthen :: Doc -> Doc -> Doc
+doc_ifthen d1 d2 =
+    PP.text "if " <> PP.parens d1
+    $$ wrap_in_braces d2
 
 
 doc_ifthenelse :: Doc -> Doc -> Doc -> Doc
@@ -157,6 +204,12 @@ doc_ifthenelse d1 d2 d3 =
     $$ wrap_in_braces d2
     $$ PP.text "else"
     $$ wrap_in_braces d3
+
+
+doc_while :: Doc -> Doc -> Doc
+doc_while d1 d2 =
+    PP.text "while " <> (PP.parens d1)
+    $$ (wrap_in_braces d2)
 
 
 doc_switch :: Doc -> Doc -> Doc

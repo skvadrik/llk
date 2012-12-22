@@ -8,33 +8,12 @@ module PDA
 
 import qualified Data.Set            as S
 import qualified Data.HashMap.Strict as M
-import           Data.Hashable
 import           Data.List                (foldl')
 import           Data.Tuple               (swap)
-import           Debug.Trace
 
 import           Grammar
+import           Types
 import           LLkProperties            (first_k)
-
-
-type Context = S.Set [Terminal]
-data PDA = A
-    { order         :: Int
-    , symbol2contex :: M.HashMap Symbol Context
-    , commands      :: M.HashMap (NonTerminal, Context) (M.HashMap [Terminal] [(Symbol, Context)])
-    , open_states   :: S.Set (NonTerminal, Context)
-    } deriving (Show)
-
-
-hashAndCombine :: Hashable h => Int -> h -> Int
-hashAndCombine acc h = acc `combine` hash h
-
-instance (Hashable a) => Hashable (S.Set a) where
-    hash = S.foldl' hashAndCombine 0
-
-
-trace' :: Show a => a -> a
-trace' a = trace (show a) a
 
 
 get_all_contexts :: Int -> M.HashMap Symbol Context

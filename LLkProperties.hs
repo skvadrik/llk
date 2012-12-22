@@ -8,13 +8,8 @@ module LLkProperties
 
 import qualified Data.Set    as S
 import           Data.List        (foldl', delete)
-import           Debug.Trace
 
 import           Grammar
-
-
-trace' :: Show a => a -> a
-trace' a = trace (show a) a
 
 
 is_terminal :: Symbol -> Bool
